@@ -35,6 +35,7 @@ async function apiRequest(path, options = {}) {
 
 function formatDate(date) {
   const [day, month, year] = date.split("-");
+
   return new Date(Number(year), Number(month) - 1, Number(day))
     .toLocaleDateString("en-IN", {
       day: "numeric",
@@ -49,26 +50,27 @@ export default function App() {
   const [quantities, setQuantities] = useState({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
+  const [cancelling, setCancelling] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
   async function loadData() {
-  setLoading(true);
-  setError("");
+    setLoading(true);
+    setError("");
 
-  try {
-    const [eventData, bookingData] = await Promise.all([
-      apiRequest("/events"),
-      apiRequest("/bookings"),
-    ]);
+    try {
+      const [eventData, bookingData] = await Promise.all([
+        apiRequest("/events"),
+        apiRequest("/bookings"),
+      ]);
 
-    setEvents(eventData);
-    setBookings(bookingData);
-  } catch (err) {
-    setError(err.message);
+      setEvents(eventData);
+      setBookings(bookingData);
+    } catch (err) {
+      setError(err.message);
     } finally {
       setLoading(false);
-      }
+    }
   }
 
   useEffect(() => {
@@ -98,9 +100,37 @@ export default function App() {
       await loadData();
     } catch (err) {
       setError(err.message);
-      await loadData();
     } finally {
       setBusy("");
+    }
+  }
+
+  async function cancelBooking(booking) {
+    const confirmed = window.confirm(
+      `Are you sure you want to cancel your booking for "${booking.eventTitle}"? ${booking.quantity} ticket(s) will be released.`
+    );
+
+    if (!confirmed) return;
+
+    setCancelling(booking.bookingId);
+    setError("");
+    setNotice("");
+
+    try {
+      const result = await apiRequest(
+        `/bookings/${encodeURIComponent(booking.bookingId)}/cancel`,
+        { method: "POST" }
+      );
+
+      setNotice(
+        `Booking cancelled successfully. ${result.seatsRestored} seat(s) restored.`
+      );
+
+      await loadData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCancelling("");
     }
   }
 
@@ -108,19 +138,34 @@ export default function App() {
     <main className="app">
       <header className="hero">
         <nav className="navbar">
-          <a className="brand" href="#">evently<span>.</span></a>
-          <a className="nav-link" href="#bookings">My bookings ↓</a>
+          <a className="brand" href="#">
+            evently<span>.</span>
+          </a>
+          <a className="nav-link" href="#bookings">
+            My bookings ↓
+          </a>
         </nav>
 
         <div className="hero-content">
           <span className="eyebrow">YOUR CITY. YOUR MOMENTS.</span>
-          <h1>Make room for<br /><span>something memorable.</span></h1>
-          <p>Discover experiences, find your people, and book your next great day out.</p>
-          <a href="#events" className="hero-button">Explore events <span>↗</span></a>
+          <h1>
+            Make room for
+            <br />
+            <span>something memorable.</span>
+          </h1>
+          <p>
+            Discover experiences, find your people, and book your next great
+            day out.
+          </p>
+          <a href="#events" className="hero-button">
+            Explore events <span>↗</span>
+          </a>
         </div>
 
         <div className="hero-decoration">✳</div>
-        <div className="hero-footer">CHENNAI · INDIA <span>POWERED BY AWS SERVERLESS</span></div>
+        <div className="hero-footer">
+          CHENNAI · INDIA <span>POWERED BY AWS SERVERLESS</span>
+        </div>
       </header>
 
       {notice && <div className="alert success">{notice}</div>}
@@ -132,7 +177,9 @@ export default function App() {
             <span className="eyebrow">FIND YOUR NEXT EXPERIENCE</span>
             <h2>What's happening</h2>
           </div>
-          <button className="refresh" onClick={loadData}>↻ Refresh</button>
+          <button className="refresh" onClick={loadData} disabled={loading}>
+            ↻ Refresh
+          </button>
         </div>
 
         {loading ? (
@@ -145,7 +192,9 @@ export default function App() {
               <article className="event-card" key={item.eventId}>
                 <div className={`event-art art-${index + 1}`}>
                   <span className="category">{item.category}</span>
-                  <span className="art-number">0{index + 1}</span>
+                  <span className="art-number">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
                   <span className="art-shape">
                     {index === 0 ? "✳" : index === 1 ? "♫" : "◈"}
                   </span>
@@ -167,50 +216,59 @@ export default function App() {
                       <strong>{item.availableSeats}</strong>
                     </div>
                   </div>
-                {Number(item.availableSeats) > 0 ? (
-                  <>
-                    <div className="booking-controls">
-                      <label htmlFor={`quantity-${item.eventId}`}>
-                        Tickets
-                      </label>
 
-                      <select
-                        id={`quantity-${item.eventId}`}
-                        value={quantities[item.eventId] || 1}
-                        onChange={(e) =>
-                          setQuantities((previous) => ({
-                            ...previous,
-                            [item.eventId]: Number(e.target.value),
-                          }))
-                        }
+                  {Number(item.availableSeats) > 0 ? (
+                    <>
+                      <div className="booking-controls">
+                        <label htmlFor={`quantity-${item.eventId}`}>
+                          Tickets
+                        </label>
+
+                        <select
+                          id={`quantity-${item.eventId}`}
+                          value={Math.min(
+                            Number(quantities[item.eventId] || 1),
+                            Math.min(10, Number(item.availableSeats))
+                          )}
+                          onChange={(e) =>
+                            setQuantities((previous) => ({
+                              ...previous,
+                              [item.eventId]: Number(e.target.value),
+                            }))
+                          }
+                        >
+                          {Array.from(
+                            {
+                              length: Math.min(
+                                10,
+                                Number(item.availableSeats)
+                              ),
+                            },
+                            (_, i) => i + 1
+                          ).map((n) => (
+                            <option key={n} value={n}>
+                              {n}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <button
+                        className="book-button"
+                        disabled={busy !== "" || cancelling !== ""}
+                        onClick={() => bookTickets(item)}
                       >
-                        {Array.from(
-                          { length: Math.min(10, Number(item.availableSeats)) },
-                          (_, i) => i + 1
-                        ).map((n) => (
-                          <option key={n} value={n}>
-                            {n}
-                          </option>
-                        ))}
-                      </select>
+                        {busy === item.eventId
+                          ? "Confirming..."
+                          : "Reserve tickets ↗"}
+                      </button>
+                    </>
+                  ) : (
+                    <div className="sold-out">
+                      <span className="sold-out-icon">✓</span>
+                      <span>SEATS FILLED</span>
                     </div>
-
-                    <button
-                      className="book-button"
-                      disabled={busy !== ""}
-                      onClick={() => bookTickets(item)}
-                    >
-                      {busy === item.eventId
-                        ? "Confirming..."
-                        : "Reserve tickets ↗"}
-                    </button>
-                  </>
-                ) : (
-                  <div className="sold-out">
-                    <span className="sold-out-icon">✓</span>
-                    <span>SEATS FILLED</span>
-                  </div>
-                )}
+                  )}
                 </div>
               </article>
             ))}
@@ -221,21 +279,54 @@ export default function App() {
       <section className="section bookings-section" id="bookings">
         <span className="eyebrow">KEEP YOUR PLANS CLOSE</span>
         <h2>Your bookings</h2>
-        {bookings.length === 0 ? (
-          <p className="muted">Your confirmed reservations will appear here.</p>
+
+        {!loading && bookings.length === 0 ? (
+          <p className="muted">
+            Your confirmed reservations will appear here.
+          </p>
         ) : (
           <div className="booking-list">
             {bookings.map((booking) => (
               <article className="booking-row" key={booking.bookingId}>
                 <div>
-                  <span className="confirmed">{booking.status}</span>
+                  <span
+                    className={
+                      booking.status === "CONFIRMED"
+                        ? "confirmed"
+                        : "booking-status-cancelled"
+                    }
+                  >
+                    {booking.status}
+                  </span>
+
                   <h3>{booking.eventTitle}</h3>
+
                   <p className="muted">
                     {booking.quantity} ticket(s) · {booking.createdAt}
                   </p>
-                  <p className="booking-id">Booking ID: {booking.bookingId}</p>
+
+                  <p className="booking-id">
+                    Booking ID: {booking.bookingId}
+                  </p>
                 </div>
-                <strong className="booking-total">₹{booking.totalPrice}</strong>
+
+                <div className="booking-actions">
+                  <strong className="booking-total">
+                    ₹{booking.totalPrice}
+                  </strong>
+
+                  {booking.status === "CONFIRMED" && (
+                    <button
+                      className="cancel-button"
+                      disabled={cancelling !== "" || busy !== ""}
+                      onClick={() => cancelBooking(booking)}
+                    >
+                      {cancelling === booking.bookingId
+                        ? "Cancelling..."
+                        : "Cancel booking"}
+                    </button>
+                  )}
+                </div>
               </article>
             ))}
           </div>
@@ -243,9 +334,13 @@ export default function App() {
       </section>
 
       <footer>
-        <a className="brand" href="#">evently<span>.</span></a>
+        <a className="brand" href="#">
+          evently<span>.</span>
+        </a>
         <p>Thoughtful experiences. Seamless bookings.</p>
-        <small>CLOUD COMPUTING PROJECT · AWS LAMBDA · API GATEWAY · DYNAMODB</small>
+        <small>
+          CLOUD COMPUTING PROJECT · AWS LAMBDA · API GATEWAY · DYNAMODB
+        </small>
       </footer>
     </main>
   );
