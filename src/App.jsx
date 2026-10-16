@@ -1,6 +1,10 @@
 
 import { useEffect, useState } from "react";
-import { fetchAuthSession } from "aws-amplify/auth";
+import {
+  fetchAuthSession,
+  fetchUserAttributes,
+  signOut,
+} from "aws-amplify/auth";
 import "./App.css";
 
 const API = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
@@ -48,11 +52,28 @@ export default function App() {
   const [events, setEvents] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [quantities, setQuantities] = useState({});
+
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [cancelling, setCancelling] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+
+  // Profile dropdown
+  const [userEmail, setUserEmail] = useState("");
+  const [showProfile, setShowProfile] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  useEffect(() => {
+    fetchUserAttributes()
+      .then((attributes) => {
+        setUserEmail(attributes.email || "Signed-in user");
+      })
+      .catch((err) => {
+        console.error("Unable to load profile:", err);
+        setUserEmail("Signed-in user");
+      });
+  }, []);
 
   async function loadData() {
     setLoading(true);
@@ -134,6 +155,27 @@ export default function App() {
     }
   }
 
+  async function handleLogout() {
+    setLoggingOut(true);
+    setError("");
+
+    try {
+      await signOut();
+    } catch (err) {
+      setError("Unable to log out. Please try again.");
+      setLoggingOut(false);
+    }
+  }
+
+  function scrollToBookings() {
+    setShowProfile(false);
+
+    document.getElementById("bookings")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }
+
   return (
     <main className="app">
       <header className="hero">
@@ -141,30 +183,110 @@ export default function App() {
           <a className="brand" href="#">
             evently<span>.</span>
           </a>
-          <a className="nav-link" href="#bookings">
-            My bookings ↓
-          </a>
+
+          {/* Profile dropdown */}
+          <div className="profile-menu">
+            <button
+              type="button"
+              className="profile-trigger"
+              onClick={() =>
+                setShowProfile((current) => !current)
+              }
+              aria-expanded={showProfile}
+              aria-haspopup="true"
+              aria-label="Open profile menu"
+            >
+              <span className="profile-avatar">
+                {userEmail.includes("@")
+                  ? userEmail.charAt(0).toUpperCase()
+                  : "U"}
+              </span>
+
+              <span>Profile</span>
+
+              <span
+                className={`profile-chevron ${
+                  showProfile ? "open" : ""
+                }`}
+              >
+                ↓
+              </span>
+            </button>
+
+            {showProfile && (
+              <>
+                <button
+                  type="button"
+                  className="profile-dismiss"
+                  aria-label="Close profile menu"
+                  onClick={() => setShowProfile(false)}
+                />
+
+                <div className="profile-dropdown">
+                  <p className="profile-eyebrow">
+                    SIGNED IN AS
+                  </p>
+
+                  <div
+                    className="profile-email"
+                    title={userEmail}
+                  >
+                    <span aria-hidden="true">✉</span>
+                    <span>{userEmail || "Loading email..."}</span>
+                  </div>
+
+                  <div className="profile-divider" />
+
+                  <button
+                    type="button"
+                    className="profile-menu-item"
+                    onClick={scrollToBookings}
+                  >
+                    <span aria-hidden="true">▤</span>
+                    My bookings
+                  </button>
+
+                  <button
+                    type="button"
+                    className="profile-menu-item logout-menu-item"
+                    onClick={handleLogout}
+                    disabled={loggingOut}
+                  >
+                    <span aria-hidden="true">↪</span>
+                    {loggingOut ? "Logging out..." : "Log out"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </nav>
 
         <div className="hero-content">
-          <span className="eyebrow">YOUR CITY. YOUR MOMENTS.</span>
+          <span className="eyebrow">
+            YOUR CITY. YOUR MOMENTS.
+          </span>
+
           <h1>
             Make room for
             <br />
             <span>something memorable.</span>
           </h1>
+
           <p>
             Discover experiences, find your people, and book your next great
             day out.
           </p>
+
           <a href="#events" className="hero-button">
             Explore events <span>↗</span>
           </a>
         </div>
 
         <div className="hero-decoration">✳</div>
+
         <div className="hero-footer">
-          CHENNAI · INDIA <span>POWERED BY AWS SERVERLESS</span>
+          CHENNAI · INDIA
+          <span>POWERED BY AWS SERVERLESS</span>
         </div>
       </header>
 
@@ -174,10 +296,17 @@ export default function App() {
       <section className="section" id="events">
         <div className="section-heading">
           <div>
-            <span className="eyebrow">FIND YOUR NEXT EXPERIENCE</span>
+            <span className="eyebrow">
+              FIND YOUR NEXT EXPERIENCE
+            </span>
             <h2>What's happening</h2>
           </div>
-          <button className="refresh" onClick={loadData} disabled={loading}>
+
+          <button
+            className="refresh"
+            onClick={loadData}
+            disabled={loading}
+          >
             ↻ Refresh
           </button>
         </div>
@@ -192,18 +321,27 @@ export default function App() {
               <article className="event-card" key={item.eventId}>
                 <div className={`event-art art-${index + 1}`}>
                   <span className="category">{item.category}</span>
+
                   <span className="art-number">
                     {String(index + 1).padStart(2, "0")}
                   </span>
+
                   <span className="art-shape">
                     {index === 0 ? "✳" : index === 1 ? "♫" : "◈"}
                   </span>
-                  <span className="art-caption">CHENNAI / 2026</span>
+
+                  <span className="art-caption">
+                    CHENNAI / 2026
+                  </span>
                 </div>
 
                 <div className="event-content">
-                  <div className="event-date">{formatDate(item.date)}</div>
+                  <div className="event-date">
+                    {formatDate(item.date)}
+                  </div>
+
                   <h3>{item.title}</h3>
+
                   <p className="venue">⌖ {item.venue}</p>
 
                   <div className="event-meta">
@@ -211,6 +349,7 @@ export default function App() {
                       <span className="meta-label">TICKET PRICE</span>
                       <strong>₹{item.price}</strong>
                     </div>
+
                     <div>
                       <span className="meta-label">SEATS LEFT</span>
                       <strong>{item.availableSeats}</strong>
@@ -287,7 +426,10 @@ export default function App() {
         ) : (
           <div className="booking-list">
             {bookings.map((booking) => (
-              <article className="booking-row" key={booking.bookingId}>
+              <article
+                className="booking-row"
+                key={booking.bookingId}
+              >
                 <div>
                   <span
                     className={
@@ -337,9 +479,11 @@ export default function App() {
         <a className="brand" href="#">
           evently<span>.</span>
         </a>
+
         <p>Thoughtful experiences. Seamless bookings.</p>
+
         <small>
-          CLOUD COMPUTING PROJECT · AWS LAMBDA · API GATEWAY · DYNAMODB
+          DYNAMODB · AWS LAMBDA · API GATEWAY · CLOUDWATCH · S3 · COGNITO · AWS AMPLIFY · REACT . JS · VITE
         </small>
       </footer>
     </main>
